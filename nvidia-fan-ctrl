@@ -7,8 +7,12 @@ the driver's automatic control.
 
 The GPUs to control are read from the GPU_UUIDS environment variable
 (set in /etc/default/nvidia-fan-ctrl when run as a service).
+
+Usage: nvidia-fan-ctrl [--debug]
+  --debug  log every fan speed change
 """
 
+import argparse
 import ctypes
 import os
 import signal
@@ -27,6 +31,7 @@ EX_CONFIG = 78  # the service file won't restart on this exit code
 NVML_TEMPERATURE_GPU = 0
 
 nvml = ctypes.CDLL("libnvidia-ml.so.1")
+debug = False
 
 
 def check(ret, what):
@@ -59,6 +64,7 @@ class Gpu:
               f"{uuid}: get fan range")
         self.fans, self.lo, self.hi = fans.value, lo.value, hi.value
         self.current = None
+        self.failsafe = False
         name = ctypes.create_string_buffer(96)
         nvml.nvmlDeviceGetName(self.dev, name, len(name))
         self.name = name.value.decode() or uuid
@@ -81,15 +87,26 @@ class Gpu:
             # Speed up immediately; slow down only past the hysteresis band.
             if self.current is not None and target < self.current:
                 target = min(self.current, curve(temp.value + HYSTERESIS_C))
+            if self.failsafe:
+                print(f"{self.name}: temperature readable again", flush=True)
+                self.failsafe = False
         else:
-            print(f"{self.name}: temperature read failed, using failsafe speed", flush=True)
+            if not self.failsafe:
+                print(f"{self.name}: temperature read failed, using failsafe speed", flush=True)
+                self.failsafe = True
             target = FAILSAFE_SPEED
         if target != self.current:
             self.current = self.set_speed(target)
-            print(f"{self.name}: temp {temp.value}C -> fan {self.current}%", flush=True)
+            if debug:
+                print(f"{self.name}: temp {temp.value}C -> fan {self.current}%", flush=True)
 
 
 def main():
+    global debug
+    parser = argparse.ArgumentParser(description="Fan curve daemon for NVIDIA GPUs.")
+    parser.add_argument("--debug", action="store_true", help="log every fan speed change")
+    debug = parser.parse_args().debug
+
     uuids = os.environ.get("GPU_UUIDS", "").replace(",", " ").split()
     if not uuids:
         print("GPU_UUIDS is not set. Put the UUIDs of the GPUs to control "

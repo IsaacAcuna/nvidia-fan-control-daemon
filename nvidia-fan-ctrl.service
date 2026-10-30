@@ -6,7 +6,7 @@ Wants=nvidia-persistenced.service
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/nvidia-fan-ctrl
-ExecStart=/usr/local/sbin/nvidia-fan-ctrl
+ExecStart=/usr/local/sbin/nvidia-fan-ctrl $ARGS
 Restart=always
 RestartSec=5
 # Exit code 78 means bad config; restarting won't fix that.

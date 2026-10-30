@@ -82,8 +82,9 @@ asks for it but starts fine without it.
 
    ```
    NVIDIA GeForce RTX 3080: controlling 2 fan(s), range 30-100%
-   NVIDIA GeForce RTX 3080: temp 39C -> fan 30%
    ```
+
+   Fan speed changes are only logged in debug mode (see [Configuration](#configuration)).
 
    Compare with `nvidia-smi --query-gpu=temperature.gpu,fan.speed --format=csv`.
 
@@ -94,6 +95,7 @@ Which GPUs to control is set in `/etc/default/nvidia-fan-ctrl`:
 | Setting | Meaning |
 | --- | --- |
 | `GPU_UUIDS` | Space-separated UUIDs of the GPUs to control (from `nvidia-smi -L`). Required. |
+| `ARGS` | Extra command line options. Set to `"--debug"` to log every fan speed change. |
 
 After changing it, run `sudo systemctl restart nvidia-fan-ctrl`.
 
@@ -158,7 +160,7 @@ Stopping the service returns the fans to the driver's automatic control.
 - **`set fan 0: Insufficient Permissions`**: the script wasn't run as root. Run it through the service, or with `sudo`.
 - **`... Not Supported`, or `AttributeError: ... undefined symbol: nvmlDevice...`**: the card doesn't support software fan control, or the driver is older than 520.
 - **`OSError: libnvidia-ml.so.1: cannot open shared object file`**: the NVIDIA driver (or its NVML library) isn't installed.
-- **Testing a change without the service**: stop the service, then run `sudo GPU_UUIDS="GPU-..." ./nvidia-fan-ctrl` from the repo and press Ctrl+C to exit.
+- **Testing a change without the service**: stop the service, then run `sudo GPU_UUIDS="GPU-..." ./nvidia-fan-ctrl --debug` from the repo and press Ctrl+C to exit.
 
 ## License
 
