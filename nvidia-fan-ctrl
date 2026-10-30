@@ -1,0 +1,119 @@
+#!/usr/bin/python3
+"""Fan curve daemon for NVIDIA GPUs.
+
+Talks to the driver directly through NVML (libnvidia-ml), so it needs no
+X/Wayland display and works from boot. On exit the fans are handed back to
+the driver's automatic control.
+
+The GPUs to control are read from the GPU_UUIDS environment variable
+(set in /etc/default/nvidia-fan-ctrl when run as a service).
+"""
+
+import ctypes
+import os
+import signal
+import sys
+import time
+
+# USER VARIABLES
+POLL_SECONDS = 2
+HYSTERESIS_C = 3          # fan only slows once temp has dropped this far
+FAILSAFE_SPEED = 100      # used if the temperature can't be read
+# (temp C, fan %) points, linearly interpolated.
+CURVE = [(40, 30), (41, 55), (50, 75), (60, 85), (70, 95), (80, 100)]
+# USER VARIABLES END
+
+EX_CONFIG = 78  # the service file won't restart on this exit code
+NVML_TEMPERATURE_GPU = 0
+
+nvml = ctypes.CDLL("libnvidia-ml.so.1")
+
+
+def check(ret, what):
+    if ret != 0:
+        msg = nvml.nvmlErrorString
+        msg.restype = ctypes.c_char_p
+        raise RuntimeError(f"{what}: {msg(ret).decode()}")
+
+
+def curve(temp):
+    if temp <= CURVE[0][0]:
+        return CURVE[0][1]
+    for (t0, s0), (t1, s1) in zip(CURVE, CURVE[1:]):
+        if temp <= t1:
+            return round(s0 + (s1 - s0) * (temp - t0) / (t1 - t0))
+    return CURVE[-1][1]
+
+
+class Gpu:
+    def __init__(self, uuid):
+        self.uuid = uuid
+        self.dev = ctypes.c_void_p()
+        ret = nvml.nvmlDeviceGetHandleByUUID(uuid.encode(), ctypes.byref(self.dev))
+        if ret != 0:
+            print(f"No GPU with UUID {uuid} (see nvidia-smi -L)", file=sys.stderr)
+            sys.exit(EX_CONFIG)
+        fans, lo, hi = ctypes.c_uint(), ctypes.c_uint(), ctypes.c_uint()
+        check(nvml.nvmlDeviceGetNumFans(self.dev, ctypes.byref(fans)), f"{uuid}: get fan count")
+        check(nvml.nvmlDeviceGetMinMaxFanSpeed(self.dev, ctypes.byref(lo), ctypes.byref(hi)),
+              f"{uuid}: get fan range")
+        self.fans, self.lo, self.hi = fans.value, lo.value, hi.value
+        self.current = None
+        name = ctypes.create_string_buffer(96)
+        nvml.nvmlDeviceGetName(self.dev, name, len(name))
+        self.name = name.value.decode() or uuid
+        print(f"{self.name}: controlling {self.fans} fan(s), range {self.lo}-{self.hi}%", flush=True)
+
+    def set_speed(self, pct):
+        pct = max(self.lo, min(self.hi, pct))
+        for fan in range(self.fans):
+            check(nvml.nvmlDeviceSetFanSpeed_v2(self.dev, fan, pct), f"{self.name}: set fan {fan}")
+        return pct
+
+    def restore(self):
+        for fan in range(self.fans):
+            nvml.nvmlDeviceSetDefaultFanSpeed_v2(self.dev, fan)
+
+    def update(self):
+        temp = ctypes.c_uint()
+        if nvml.nvmlDeviceGetTemperature(self.dev, NVML_TEMPERATURE_GPU, ctypes.byref(temp)) == 0:
+            target = curve(temp.value)
+            # Speed up immediately; slow down only past the hysteresis band.
+            if self.current is not None and target < self.current:
+                target = min(self.current, curve(temp.value + HYSTERESIS_C))
+        else:
+            print(f"{self.name}: temperature read failed, using failsafe speed", flush=True)
+            target = FAILSAFE_SPEED
+        if target != self.current:
+            self.current = self.set_speed(target)
+            print(f"{self.name}: temp {temp.value}C -> fan {self.current}%", flush=True)
+
+
+def main():
+    uuids = os.environ.get("GPU_UUIDS", "").replace(",", " ").split()
+    if not uuids:
+        print("GPU_UUIDS is not set. Put the UUIDs of the GPUs to control "
+              "(from nvidia-smi -L) in /etc/default/nvidia-fan-ctrl", file=sys.stderr)
+        sys.exit(EX_CONFIG)
+
+    check(nvml.nvmlInit_v2(), "nvmlInit")
+    gpus = [Gpu(uuid) for uuid in dict.fromkeys(uuids)]
+
+    def restore(*_):
+        for gpu in gpus:
+            gpu.restore()
+        nvml.nvmlShutdown()
+        print("Fans returned to automatic control", flush=True)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, restore)
+    signal.signal(signal.SIGINT, restore)
+
+    while True:
+        for gpu in gpus:
+            gpu.update()
+        time.sleep(POLL_SECONDS)
+
+
+if __name__ == "__main__":
+    main()
