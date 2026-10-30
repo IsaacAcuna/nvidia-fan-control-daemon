@@ -24,7 +24,28 @@ Recommended: `nvidia-persistenced` running (`systemctl status nvidia-persistence
 It keeps the driver loaded when no display is using the GPU. The service file
 asks for it but starts fine without it.
 
-## Installation
+## Quick install
+
+```sh
+wget -qO- https://raw.githubusercontent.com/IsaacAcuna/nvidia-fan-control-daemon/main/install.sh | sudo bash
+```
+
+The installer checks the prerequisites, lists your NVIDIA GPUs and asks which
+ones to control, then downloads the files, installs them and starts the
+service. It also warns about NVIDIA GPUs on the PCI bus that the driver
+can't use. Running it again updates an existing install, keeping your other
+settings.
+
+To skip the prompt, pass the UUIDs (from `nvidia-smi -L`):
+
+```sh
+wget -qO- https://raw.githubusercontent.com/IsaacAcuna/nvidia-fan-control-daemon/main/install.sh | sudo GPU_UUIDS="GPU-..." bash
+```
+
+Run from a clone of the repo (`sudo ./install.sh`), it installs that clone's
+files instead of downloading them.
+
+## Manual installation
 
 1. Clone the repo:
 
