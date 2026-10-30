@@ -162,6 +162,16 @@ Stopping the service returns the fans to the driver's automatic control.
 - **`OSError: libnvidia-ml.so.1: cannot open shared object file`**: the NVIDIA driver (or its NVML library) isn't installed.
 - **Testing a change without the service**: stop the service, then run `sudo GPU_UUIDS="GPU-..." ./nvidia-fan-ctrl --debug` from the repo and press Ctrl+C to exit.
 
+## Tests
+
+The tests replace the NVIDIA library with a mock, so they need no GPU, no root
+and nothing beyond Python itself. They never touch your real fans. From the repo
+root:
+
+```sh
+python3 -m unittest discover tests
+```
+
 ## License
 
 GPL-3.0, see [LICENSE](LICENSE).
