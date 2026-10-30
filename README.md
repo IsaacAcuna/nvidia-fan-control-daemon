@@ -30,11 +30,8 @@ asks for it but starts fine without it.
 wget -qO- https://raw.githubusercontent.com/IsaacAcuna/nvidia-fan-control-daemon/main/install.sh | sudo bash
 ```
 
-The installer checks the prerequisites, lists your NVIDIA GPUs and asks which
-ones to control, then downloads the files, installs them and starts the
-service. It also warns about NVIDIA GPUs on the PCI bus that the driver
-can't use. Running it again updates an existing install, keeping your other
-settings.
+The installer attempts to automagically do as much as it can and
+will refuse to install unless we can detect an nvidia GPU. 
 
 To skip the prompt, pass the UUIDs (from `nvidia-smi -L`):
 
@@ -79,9 +76,8 @@ files instead of downloading them.
    The service refuses to start until at least one UUID is set. Every listed
    GPU gets the same fan curve; to change the curve see [Configuration](#configuration).
 
-4. Stop anything else that controls the fan, or the two will fight. That includes
-   older `nvidia-settings` fan scripts, GreenWithEnvy, CoolerControl, or a manual
-   `GPUFanControlState=1` setting.
+4. Stop anything else that controls the fan, or the two will fight. (GreenWithEnvy, 
+   CoolerControl, or a manual `GPUFanControlState=1` setting.)
 
 5. Install and start the service:
 
@@ -185,9 +181,7 @@ Stopping the service returns the fans to the driver's automatic control.
 
 ## Tests
 
-The tests replace the NVIDIA library with a mock, so they need no GPU, no root
-and nothing beyond Python itself. They never touch your real fans. From the repo
-root:
+To run the test suite from the repo root:
 
 ```sh
 python3 -m unittest discover tests
